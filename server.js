@@ -1,5 +1,7 @@
+// ⬇️ MUST be the first import — loads .env before anything else
+import "./config/env.js";
+
 import express from "express";
-import dotenv from "dotenv";
 import cors from "cors";
 import morgan from "morgan";
 import helmet from "helmet";
@@ -9,8 +11,6 @@ import connectDB from "./config/db.js";
 import routes from "./routes/index.js";
 import notFound from "./middleware/notFoundMiddleware.js";
 import errorHandler from "./middleware/errorMiddleware.js";
-
-dotenv.config();
 
 // Connect Database
 connectDB();
@@ -42,6 +42,9 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+// Listen on 0.0.0.0 to avoid Windows localhost/IPv6 issues
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+  console.log(`📧 Email user: ${process.env.EMAIL_USER}`);
+  console.log(`🔑 Email pass length: ${process.env.EMAIL_PASS?.length}`);
 });

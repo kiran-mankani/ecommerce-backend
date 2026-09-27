@@ -1,5 +1,10 @@
 import { Router } from "express";
 import authRoutes from "./authRoutes.js";
+import userRoutes from "./userRoutes.js";
+import adminRoutes from "./adminRoutes.js";
+import categoryRoutes from "./categoryRoutes.js";
+import productRoutes from "./productRoutes.js";
+import cartRoutes from "./cartRoutes.js";    // ← NEW
 
 const router = Router();
 
@@ -11,12 +16,11 @@ router.get("/health", (req, res) => {
   });
 });
 
-// Auth
 router.use("/auth", authRoutes);
-
-// Future:
-// router.use("/users", userRoutes);
-// router.use("/categories", categoryRoutes);
-// ...
+router.use("/users", userRoutes);
+router.use("/admin", adminRoutes);
+router.use("/categories", categoryRoutes);
+router.use("/products", productRoutes);
+router.use("/cart", cartRoutes);              // ← NEW
 
 export default router;

@@ -1,5 +1,11 @@
 import { body } from "express-validator";
 
+const STRONG_PASSWORD_REGEX =
+  /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*(),.?":{}|<>_+\-=[\]\\;'`~]).{8,}$/;
+
+const STRONG_PASSWORD_MESSAGE =
+  "Password must be at least 8 characters and include uppercase, lowercase, number, and special character";
+
 export const signupValidator = [
   body("name")
     .trim()
@@ -17,8 +23,8 @@ export const signupValidator = [
   body("password")
     .notEmpty()
     .withMessage("Password is required")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters"),
+    .matches(STRONG_PASSWORD_REGEX)
+    .withMessage(STRONG_PASSWORD_MESSAGE),
 ];
 
 export const loginValidator = [
@@ -42,10 +48,13 @@ export const forgotPasswordValidator = [
 
 export const resetPasswordValidator = [
   body("email").trim().isEmail().withMessage("Valid email is required"),
-  body("otp").trim().isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
+  body("otp")
+    .trim()
+    .isLength({ min: 6, max: 6 })
+    .withMessage("OTP must be 6 digits"),
   body("newPassword")
     .notEmpty()
     .withMessage("New password is required")
-    .isLength({ min: 6 })
-    .withMessage("Password must be at least 6 characters"),
+    .matches(STRONG_PASSWORD_REGEX)
+    .withMessage(STRONG_PASSWORD_MESSAGE),
 ];
