@@ -1,60 +1,64 @@
-import dotenv from "dotenv";
+import "../config/env.js";
 import mongoose from "mongoose";
 import User from "../models/User.js";
+import { USER_ROLES } from "../constants/index.js";
 
-dotenv.config();
+const ADMIN_NAME = process.env.ADMIN_NAME?.trim() || "Admin";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL?.toLowerCase().trim();
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
-const seedAdmin = async () => {
+const run = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
-
-    console.log("✅ MongoDB connected");
-
-    const adminEmail = process.env.ADMIN_EMAIL?.toLowerCase().trim();
-    const adminName = process.env.ADMIN_NAME?.trim();
-    const adminPassword = process.env.ADMIN_PASSWORD;
-
-    if (!adminEmail || !adminName || !adminPassword) {
+    if (!ADMIN_EMAIL || !ADMIN_PASSWORD) {
       throw new Error(
-        "ADMIN_NAME, ADMIN_EMAIL and ADMIN_PASSWORD are required in .env"
+        "ADMIN_EMAIL and ADMIN_PASSWORD must be set in backend/.env"
       );
     }
 
-    const existingUser = await User.findOne({ email: adminEmail });
+    await mongoose.connect(process.env.MONGO_URI);
+    console.log("✅ MongoDB Connected");
 
-    if (existingUser) {
-      if (existingUser.role === "admin") {
-        console.log("ℹ️ Admin already exists:", adminEmail);
-      } else {
-        console.log(
-          "❌ Email already belongs to a non-admin user. Admin was NOT created."
-        );
-      }
+    // Use select("+password") so we can update it
+    let admin = await User.findOne({ email: ADMIN_EMAIL }).select("+password");
 
-      await mongoose.disconnect();
-      return;
+    if (admin) {
+      // Existing user found — make sure it's an admin and reset the password
+      admin.name = ADMIN_NAME;
+      admin.password = ADMIN_PASSWORD; // pre-save hook re-hashes
+      admin.role = USER_ROLES.ADMIN;
+      admin.isVerified = true;
+      await admin.save();
+
+      console.log(`🔄 Admin updated: ${admin.email}`);
+      console.log(`   Role:     ${admin.role}`);
+      console.log(`   Verified: ${admin.isVerified}`);
+    } else {
+      // No user with that email — create one
+      admin = await User.create({
+        name: ADMIN_NAME,
+        email: ADMIN_EMAIL,
+        password: ADMIN_PASSWORD,
+        role: USER_ROLES.ADMIN,
+        isVerified: true,
+      });
+
+      console.log(`🎉 Admin created: ${admin.email}`);
+      console.log(`   Role:     ${admin.role}`);
+      console.log(`   Verified: ${admin.isVerified}`);
     }
 
-    const admin = await User.create({
-      name: adminName,
-      email: adminEmail,
-      password: adminPassword,
-      role: "admin",
-      isVerified: true,
-    });
-
-    console.log("✅ Admin created successfully");
-    console.log("Name:", admin.name);
-    console.log("Email:", admin.email);
-    console.log("Role:", admin.role);
-    console.log("Verified:", admin.isVerified);
-
     await mongoose.disconnect();
-  } catch (error) {
-    console.error("❌ Admin seed failed:", error.message);
-    await mongoose.disconnect();
+    console.log("🔌 Disconnected");
+    process.exit(0);
+  } catch (err) {
+    console.error("❌ Seed failed:", err.message);
+    try {
+      await mongoose.disconnect();
+    } catch (_) {
+      /* ignore */
+    }
     process.exit(1);
   }
 };
 
-seedAdmin();
+run();

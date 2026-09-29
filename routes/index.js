@@ -5,7 +5,7 @@ import adminRoutes from "./adminRoutes.js";
 import categoryRoutes from "./categoryRoutes.js";
 import productRoutes from "./productRoutes.js";
 import cartRoutes from "./cartRoutes.js";    // ← NEW
-
+import orderRoutes from "./orderRoutes.js";   
 const router = Router();
 
 router.get("/health", (req, res) => {
@@ -21,6 +21,8 @@ router.use("/users", userRoutes);
 router.use("/admin", adminRoutes);
 router.use("/categories", categoryRoutes);
 router.use("/products", productRoutes);
-router.use("/cart", cartRoutes);              // ← NEW
+router.use("/cart", cartRoutes);   
+
+router.use("/orders", orderRoutes);            // ← NEW
 
 export default router;

@@ -5,6 +5,7 @@ import {
   updateProfile,
   changePassword,
   logout,
+  uploadAvatar,
 } from "../controllers/userController.js";
 import {
   updateProfileValidator,
@@ -12,6 +13,7 @@ import {
 } from "../validators/userValidator.js";
 import validate from "../middleware/validateMiddleware.js";
 import { protect } from "../middleware/authMiddleware.js";
+import { uploadAvatarImage } from "../middleware/uploadMiddleware.js";
 
 const router = Router();
 
@@ -22,6 +24,7 @@ router.get("/me", getMe);
 router.get("/profile", getProfile);
 router.put("/profile", updateProfileValidator, validate, updateProfile);
 router.put("/change-password", changePasswordValidator, validate, changePassword);
+router.post("/avatar", uploadAvatarImage, uploadAvatar);
 router.post("/logout", logout);
 
 export default router;
