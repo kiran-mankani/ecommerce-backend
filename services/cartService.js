@@ -2,9 +2,6 @@ import Cart from "../models/Cart.js";
 import Product from "../models/Product.js";
 import ApiError from "../utils/ApiError.js";
 
-/**
- * Get or create the cart for a user.
- */
 const getOrCreateCart = async (userId) => {
   let cart = await Cart.findOne({ userId });
   if (!cart) {
@@ -13,9 +10,6 @@ const getOrCreateCart = async (userId) => {
   return cart;
 };
 
-/**
- * Populate cart items with product details and compute totals.
- */
 const buildCartResponse = async (cart) => {
   const ids = cart.items.map((i) => i.productId);
   const products = await Product.find({ _id: { $in: ids } }).populate(
@@ -30,7 +24,7 @@ const buildCartResponse = async (cart) => {
 
   for (const it of cart.items) {
     const p = prodById.get(String(it.productId));
-    if (!p) continue; // product was deleted
+    if (!p) continue;
 
     const price = p.price;
     const discountAmount = (price * (p.discount || 0)) / 100;
@@ -75,8 +69,9 @@ export const addToCart = async (userId, { productId, quantity = 1 }) => {
   const product = await Product.findById(productId);
   if (!product) throw new ApiError(404, "Product not found");
   if (product.status !== "active")
-    throw new ApiError(400, "Product is not available");
-  if (product.stock <= 0) throw new ApiError(400, "Product is out of stock");
+    throw new ApiError(400, "Out of stock");
+  if (product.stock <= 0)
+    throw new ApiError(400, "Out of stock");
 
   const cart = await getOrCreateCart(userId);
   const idx = cart.items.findIndex(
@@ -85,12 +80,20 @@ export const addToCart = async (userId, { productId, quantity = 1 }) => {
 
   if (idx >= 0) {
     const newQty = cart.items[idx].quantity + quantity;
-    if (newQty > product.stock)
-      throw new ApiError(400, `Only ${product.stock} in stock`);
+    if (newQty > product.stock) {
+      throw new ApiError(
+        400,
+        `Only ${product.stock} left in stock`
+      );
+    }
     cart.items[idx].quantity = newQty;
   } else {
-    if (quantity > product.stock)
-      throw new ApiError(400, `Only ${product.stock} in stock`);
+    if (quantity > product.stock) {
+      throw new ApiError(
+        400,
+        `Only ${product.stock} left in stock`
+      );
+    }
     cart.items.push({ productId, quantity });
   }
 
@@ -108,8 +111,9 @@ export const updateCartItem = async (userId, productId, quantity) => {
   );
   if (idx < 0) throw new ApiError(404, "Item not in cart");
 
-  if (quantity > product.stock)
-    throw new ApiError(400, `Only ${product.stock} in stock`);
+  if (quantity > product.stock) {
+    throw new ApiError(400, `Only ${product.stock} left in stock`);
+  }
 
   cart.items[idx].quantity = quantity;
   await cart.save();

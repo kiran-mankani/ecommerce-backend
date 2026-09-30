@@ -3,18 +3,6 @@ import Product from "../models/Product.js";
 import Order from "../models/Order.js";
 import ApiError from "../utils/ApiError.js";
 
-/**
- * Create an order from the user's current cart.
- * Flow:
- *   1. Load cart
- *   2. Validate cart non-empty
- *   3. Load all products, verify stock and active status
- *   4. Snapshot items with current prices
- *   5. Compute totals
- *   6. Create order
- *   7. Decrement stock
- *   8. Clear cart
- */
 export const createOrder = async (userId, { shippingAddress }) => {
   const cart = await Cart.findOne({ userId });
   if (!cart || cart.items.length === 0) {
@@ -32,10 +20,8 @@ export const createOrder = async (userId, { shippingAddress }) => {
   for (const item of cart.items) {
     const p = byId.get(String(item.productId));
     if (!p) throw new ApiError(400, "A product in your cart no longer exists");
-    if (p.status !== "active")
-      throw new ApiError(400, `"${p.name}" is no longer available`);
-    if (p.stock < item.quantity)
-      throw new ApiError(400, `Only ${p.stock} in stock for "${p.name}"`);
+    if (p.status !== "active") throw new ApiError(400, "Out of stock");
+    if (p.stock < item.quantity) throw new ApiError(400, "Out of stock");
 
     const price = p.price;
     const discountAmount = (price * (p.discount || 0)) / 100;
@@ -66,7 +52,6 @@ export const createOrder = async (userId, { shippingAddress }) => {
     orderStatus: "pending",
   });
 
-  // Decrement stock (safe: we already validated)
   await Promise.all(
     orderItems.map((it) =>
       Product.updateOne(
@@ -76,7 +61,6 @@ export const createOrder = async (userId, { shippingAddress }) => {
     )
   );
 
-  // Clear cart
   cart.items = [];
   await cart.save();
 

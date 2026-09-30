@@ -62,8 +62,23 @@ const productSchema = new mongoose.Schema(
       index: true,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
+  }
 );
+
+/* ✅ Computed fields — included in every toObject() / toJSON() */
+productSchema.virtual("stockStatus").get(function () {
+  if (this.stock <= 0) return "out-of-stock";
+  if (this.stock <= 5) return "low-stock";
+  return "in-stock";
+});
+
+productSchema.virtual("inStock").get(function () {
+  return this.stock > 0;
+});
 
 const Product = mongoose.model("Product", productSchema);
 export default Product;
