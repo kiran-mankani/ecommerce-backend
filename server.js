@@ -8,6 +8,7 @@ import cookieParser from "cookie-parser";
 
 import connectDB from "./config/db.js";
 import routes from "./routes/index.js";
+import paymentRoutes from "./routes/paymentRoutes.js";
 import notFound from "./middleware/notFoundMiddleware.js";
 import errorHandler from "./middleware/errorMiddleware.js";
 
@@ -38,6 +39,16 @@ app.use(
   })
 );
 
+/* ============================ Stripe Webhook ============================
+   ⚠️ MUST be registered BEFORE express.json() so the raw body is preserved
+   for signature verification. Stripe signs the raw bytes, not parsed JSON.
+   ======================================================================= */
+app.post(
+  "/api/v1/payment/webhook",
+  express.raw({ type: "application/json" }),
+  paymentRoutes.webhookHandler
+);
+
 /* ============================ Body parsers ============================ */
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
@@ -56,6 +67,9 @@ if (process.env.NODE_ENV === "development") {
 
 /* ============================ Routes ============================ */
 app.use("/api/v1", routes);
+
+// Stripe checkout session endpoints (non-webhook) — under /api/v1
+app.use("/api/v1/payment", paymentRoutes.router);
 
 /* ============================ Errors ============================ */
 app.use(notFound);
