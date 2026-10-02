@@ -35,7 +35,7 @@ export const logout = asyncHandler(async (req, res) => {
 
 /**
  * Upload/replace the logged-in user's avatar.
- * File is stored in backend/uploads/avatars/ and served at /uploads/avatars/<file>.
+ * File is stored on Cloudinary; `req.file.path` is its public URL.
  */
 export const uploadAvatar = asyncHandler(async (req, res) => {
   if (!req.file) {
@@ -46,7 +46,7 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
   if (!user) throw new ApiError(404, "User not found");
 
   // Public URL the browser can load
-  user.profile.profileImage = `/uploads/avatars/${req.file.filename}`;
+  user.profile.profileImage = req.file.path;
   await user.save();
 
   res

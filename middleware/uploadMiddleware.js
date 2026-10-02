@@ -1,36 +1,29 @@
 import multer from "multer";
-import path from "path";
-import fs from "fs";
+import { CloudinaryStorage } from "multer-storage-cloudinary";
+import cloudinary from "../config/cloudinary.js";
 import ApiError from "../utils/ApiError.js";
 
 /* =====================================================================
-   Ensure upload directories exist
+   Storage engines (Cloudinary)
+   Serverless hosts like Vercel have a read-only filesystem, so files
+   can't be written to local disk. Uploaded files get a public URL in
+   `file.path`.
    ===================================================================== */
-const productDir = "uploads/products";
-const avatarDir = "uploads/avatars";
-
-if (!fs.existsSync(productDir)) fs.mkdirSync(productDir, { recursive: true });
-if (!fs.existsSync(avatarDir)) fs.mkdirSync(avatarDir, { recursive: true });
-
-/* =====================================================================
-   Storage engines (local disk)
-   ===================================================================== */
-const productStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, productDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".png";
-    cb(null, `product-${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
+const productStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "ecommerce/products",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    public_id: () => `product-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
   },
 });
 
-const avatarStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, avatarDir),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".png";
-    cb(
-      null,
-      `avatar-${req.user?._id || "user"}-${Date.now()}${ext}`
-    );
+const avatarStorage = new CloudinaryStorage({
+  cloudinary,
+  params: {
+    folder: "ecommerce/avatars",
+    allowed_formats: ["jpg", "jpeg", "png", "webp"],
+    public_id: (req) => `avatar-${req.user?._id || "user"}-${Date.now()}`,
   },
 });
 
