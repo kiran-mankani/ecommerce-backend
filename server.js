@@ -66,6 +66,10 @@ if (process.env.NODE_ENV === "development") {
 }
 
 /* ============================ Routes ============================ */
+app.get("/", (req, res) => {
+  res.json({ success: true, message: "E-commerce API is running", api: "/api/v1" });
+});
+
 app.use("/api/v1", routes);
 
 // Stripe checkout session endpoints (non-webhook) — under /api/v1
@@ -76,10 +80,15 @@ app.use(notFound);
 app.use(errorHandler);
 
 /* ============================ Listen ============================ */
-const PORT = process.env.PORT || 5000;
+// On Vercel the app is invoked as a serverless function, so don't call listen()
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
-  console.log(
-    `🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`
-  );
-});
+  app.listen(PORT, () => {
+    console.log(
+      `🚀 Server running in ${process.env.NODE_ENV} mode on port ${PORT}`
+    );
+  });
+}
+
+export default app;

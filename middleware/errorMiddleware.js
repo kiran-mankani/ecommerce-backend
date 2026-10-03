@@ -14,7 +14,7 @@ const errorHandler = (err, req, res, next) => {
     statusCode,
     message,
     errors: err.errors || [],
-    stack: err.stack, // always show stack while debugging
+    ...(process.env.NODE_ENV !== "production" && { stack: err.stack }),
   });
 };
 
