@@ -54,10 +54,6 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-/* ============================ Static uploads ============================ */
-// Serves files at http://localhost:5000/uploads/...
-app.use("/uploads", express.static("uploads"));
-
 /* ============================ Logging ============================ */
 if (process.env.NODE_ENV === "development") {
   app.use(morgan("dev"));

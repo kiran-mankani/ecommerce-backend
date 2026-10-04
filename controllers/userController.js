@@ -2,6 +2,7 @@ import asyncHandler from "../utils/asyncHandler.js";
 import ApiResponse from "../utils/ApiResponse.js";
 import ApiError from "../utils/ApiError.js";
 import User from "../models/User.js";
+import { deleteImagesFromCloudinary } from "../utils/cloudinaryUpload.js";
 import {
   getMyProfile,
   updateMyProfile,
@@ -45,9 +46,16 @@ export const uploadAvatar = asyncHandler(async (req, res) => {
   const user = await User.findById(req.user._id);
   if (!user) throw new ApiError(404, "User not found");
 
-  // Public URL the browser can load
+  const oldImage = user.profile.profileImage;
+
+  // Cloudinary URL — this is what gets stored in the DB
   user.profile.profileImage = req.file.path;
   await user.save();
+
+  // Remove the previous avatar from Cloudinary
+  if (oldImage && oldImage !== req.file.path) {
+    await deleteImagesFromCloudinary([oldImage]);
+  }
 
   res
     .status(200)

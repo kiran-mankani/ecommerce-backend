@@ -1,6 +1,7 @@
 import Product from "../models/Product.js";
 import Category from "../models/Category.js";
 import ApiError from "../utils/ApiError.js";
+import { deleteImagesFromCloudinary } from "../utils/cloudinaryUpload.js";
 
 /* ============ ADMIN ============ */
 
@@ -41,17 +42,29 @@ export const updateProduct = async (id, payload) => {
   if (payload.discount !== undefined) product.discount = payload.discount;
   if (payload.brand !== undefined) product.brand = payload.brand?.trim() || "";
   if (payload.stock !== undefined) product.stock = payload.stock;
-  if (payload.images !== undefined) product.images = payload.images;
+  let removedImages = [];
+  if (payload.images !== undefined) {
+    removedImages = product.images.filter(
+      (url) => !payload.images.includes(url)
+    );
+    product.images = payload.images;
+  }
   if (payload.status !== undefined) product.status = payload.status;
 
   await product.save();
+
+  // Remove images the admin took off the product from Cloudinary
+  await deleteImagesFromCloudinary(removedImages);
+
   return product.toObject();
 };
 
 export const deleteProduct = async (id) => {
   const product = await Product.findById(id);
   if (!product) throw new ApiError(404, "Product not found");
+  const images = [...product.images];
   await product.deleteOne();
+  await deleteImagesFromCloudinary(images);
   return { message: "Product deleted" };
 };
 

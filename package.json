@@ -8,7 +8,8 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "seed:admin": "node scripts/seedAdmin.js",
-    "seed:products":"node scripts/seedDummyData.js"
+    "seed:products": "node scripts/seedDummyData.js",
+    "migrate:images": "node scripts/migrateImagesToCloudinary.js"
   },
   "keywords": [],
   "author": "",
@@ -27,7 +28,6 @@
     "mongoose": "^9.10.1",
     "morgan": "^1.12.1",
     "multer": "^2.4.0",
-    "multer-storage-cloudinary": "^4.0.0",
     "nodemailer": "^10.0.10",
     "resend": "^6.28.1",
     "stripe": "^17.7.0"

@@ -1,35 +1,15 @@
 import multer from "multer";
-import { CloudinaryStorage } from "multer-storage-cloudinary";
-import cloudinary from "../config/cloudinary.js";
 import ApiError from "../utils/ApiError.js";
+import { uploadBufferToCloudinary } from "../utils/cloudinaryUpload.js";
 
 /* =====================================================================
-   Storage engines (Cloudinary)
-   Serverless hosts like Vercel have a read-only filesystem, so files
-   can't be written to local disk. Uploaded files get a public URL in
-   `file.path`.
+   Files are kept in memory (never written to disk) and streamed
+   straight to Cloudinary. After upload, each file gets:
+     - file.path         -> Cloudinary secure URL (stored in the DB)
+     - file.cloudinaryId -> Cloudinary public_id
    ===================================================================== */
-const productStorage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: "ecommerce/products",
-    allowed_formats: ["jpg", "jpeg", "png", "webp"],
-    public_id: () => `product-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
-  },
-});
+const storage = multer.memoryStorage();
 
-const avatarStorage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: "ecommerce/avatars",
-    allowed_formats: ["jpg", "jpeg", "png", "webp"],
-    public_id: (req) => `avatar-${req.user?._id || "user"}-${Date.now()}`,
-  },
-});
-
-/* =====================================================================
-   Shared filter
-   ===================================================================== */
 const fileFilter = (req, file, cb) => {
   if (/^image\/(jpe?g|png|webp)$/.test(file.mimetype)) {
     cb(null, true);
@@ -38,24 +18,82 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-/* =====================================================================
-   Product image uploads (up to 5 files, field name "images")
-   ===================================================================== */
-export const upload = multer({
-  storage: productStorage,
+const upload = multer({
+  storage,
   fileFilter,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
 
-export const uploadProductImages = upload.array("images", 5);
+/* Runs a multer handler, converting multer errors into ApiErrors */
+const runMulter = (handler, req, res) =>
+  new Promise((resolve, reject) => {
+    handler(req, res, (err) => {
+      if (!err) return resolve();
+      if (err instanceof multer.MulterError) {
+        const message =
+          err.code === "LIMIT_FILE_SIZE"
+            ? "Each image must be 5 MB or smaller"
+            : err.code === "LIMIT_UNEXPECTED_FILE"
+            ? "Too many images or wrong field name"
+            : err.message;
+        return reject(new ApiError(400, message));
+      }
+      reject(err);
+    });
+  });
+
+const sendToCloudinary = async (file, folder, publicId) => {
+  try {
+    const result = await uploadBufferToCloudinary(file.buffer, {
+      folder,
+      public_id: publicId,
+    });
+    file.path = result.secure_url;
+    file.cloudinaryId = result.public_id;
+    delete file.buffer; // free memory
+  } catch (err) {
+    throw new ApiError(502, `Image upload to Cloudinary failed: ${err.message}`);
+  }
+};
+
+/* =====================================================================
+   Product image uploads (up to 5 files, field name "images")
+   ===================================================================== */
+export const uploadProductImages = async (req, res, next) => {
+  try {
+    await runMulter(upload.array("images", 5), req, res);
+
+    await Promise.all(
+      (req.files || []).map((file) =>
+        sendToCloudinary(
+          file,
+          "ecommerce/products",
+          `product-${Date.now()}-${Math.round(Math.random() * 1e6)}`
+        )
+      )
+    );
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
 
 /* =====================================================================
    Avatar uploads (single file, field name "avatar")
    ===================================================================== */
-export const avatarUpload = multer({
-  storage: avatarStorage,
-  fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
-});
+export const uploadAvatarImage = async (req, res, next) => {
+  try {
+    await runMulter(upload.single("avatar"), req, res);
 
-export const uploadAvatarImage = avatarUpload.single("avatar");
+    if (req.file) {
+      await sendToCloudinary(
+        req.file,
+        "ecommerce/avatars",
+        `avatar-${req.user?._id || "user"}-${Date.now()}`
+      );
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
