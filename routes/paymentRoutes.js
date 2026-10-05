@@ -1,97 +1,81 @@
 import express from "express";
 import Stripe from "stripe";
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
+import Order from "../models/Order.js";
+import Cart from "../models/Cart.js";
+import { createOrder } from "../services/orderService.js";
+import { protect } from "../middleware/authMiddleware.js";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-/* ============================================================
-   EXPRESS ROUTER — non-webhook endpoints
-   (mounted at /api/v1/payment via server.js)
-   ============================================================ */
 const router = express.Router();
 
-/* ---------- CREATE CHECKOUT SESSION ----------
+/* ---------- HELPER: Validate ObjectId format ---------- */
+const isValidObjectId = (id) =>
+  typeof id === "string" && mongoose.Types.ObjectId.isValid(id);
+
+/* ============================================================
+   CREATE CHECKOUT SESSION
    POST /api/v1/payment/create-checkout-session
-   Body: { items: [{ productId, quantity }] }
------------------------------------------------- */
-router.post("/create-checkout-session", async (req, res) => {
+   ============================================================ */
+router.post("/create-checkout-session", protect, async (req, res) => {
   console.log("╔═══════════════════════════════════════");
   console.log("║ 🔍 create-checkout-session HIT");
-  console.log("║ 📦 req.body TYPE:", typeof req.body);
-  console.log("║ 📦 req.body IS ARRAY:", Array.isArray(req.body));
-  console.log("║ 📦 req.body KEYS:", Object.keys(req.body || {}));
-  console.log("║ 📦 req.body FULL:", JSON.stringify(req.body, null, 2));
+  console.log("║ 👤 req.user:", req.user?._id, req.user?.email);
 
   try {
-    // ✅ DEFENSIVE: handle all possible shapes
+    // ---- 1. Extract items (defensive) ----
     let items;
-
     if (Array.isArray(req.body)) {
-      // Body is already an array
       items = req.body;
-      console.log("║ ✅ Extracted: body IS array");
     } else if (Array.isArray(req.body?.items)) {
-      // Standard: { items: [...] }
       items = req.body.items;
-      console.log("║ ✅ Extracted: body.items IS array");
     } else if (typeof req.body?.items === "string") {
-      // Fallback: items was stringified
       try {
         items = JSON.parse(req.body.items);
-        console.log("║ ✅ Extracted: parsed body.items string");
       } catch {
         items = [];
       }
     } else {
       items = [];
-      console.log("║ ❌ Could not find items array anywhere");
     }
 
-    console.log("║ 📦 items.length:", items.length);
-    console.log("║ 🔍 Product model type:", typeof Product);
-    console.log(
-      "║ 🔑 Stripe key:",
-      process.env.STRIPE_SECRET_KEY
-        ? process.env.STRIPE_SECRET_KEY.slice(0, 15) + "..."
-        : "MISSING!"
-    );
-    console.log("║ 🔍 CLIENT_URL:", process.env.CLIENT_URL);
+    const shippingAddress = req.body?.shippingAddress || {};
 
     if (!items || items.length === 0) {
-      console.log("║ ❌ Cart is empty");
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // ⚠️ SECURITY: Never trust client prices — fetch from DB
+    // ---- 2. Validate authenticated user ----
+    const userId = req.user?._id?.toString();
+    if (!isValidObjectId(userId)) {
+      console.log("║ ❌ Invalid userId:", userId);
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    console.log("║ 📦 userId:", userId);
+    console.log("║ 📦 items:", items.length);
+    console.log("║ 📦 shippingAddress:", JSON.stringify(shippingAddress));
+
+    // ---- 3. Build Stripe line items ----
     const lineItems = await Promise.all(
       items.map(async (item) => {
-        console.log("║ 🔍 Looking up product:", item.productId);
+        if (!isValidObjectId(item.productId)) {
+          throw new Error(`Invalid productId: ${item.productId}`);
+        }
 
-        let product;
-        try {
-          product = await Product.findById(item.productId);
-        } catch (e) {
-          console.log("║ ❌ findById threw:", e.message);
+        const product = await Product.findById(item.productId);
+        if (!product) throw new Error(`Product not found: ${item.productId}`);
+        if (product.stock < item.quantity) {
           throw new Error(
-            `Invalid productId ${item.productId}: ${e.message}`
+            `Only ${product.stock} left in stock for ${product.name}`
           );
         }
 
-        if (!product) {
-          console.log("║ ❌ Product NOT in DB:", item.productId);
-          throw new Error(`Product not found: ${item.productId}`);
-        }
-
-        console.log(
-          "║ ✅ Found:",
-          product.name,
-          "| price:",
-          product.price
-        );
-
         const quantity = Math.max(1, parseInt(item.quantity, 10) || 1);
-        const unitAmount = Math.round(Number(product.price) * 100);
-        console.log("║ 🔍 unitAmount (cents):", unitAmount);
+        const discountAmount = (product.price * (product.discount || 0)) / 100;
+        const finalPrice = product.price - discountAmount;
+        const unitAmount = Math.round(finalPrice * 100);
 
         return {
           price_data: {
@@ -107,9 +91,7 @@ router.post("/create-checkout-session", async (req, res) => {
       })
     );
 
-    console.log("║ ✅ lineItems built:", lineItems.length);
-    console.log("║ 🔍 Creating Stripe session...");
-
+    // ---- 4. Create Stripe session ----
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: lineItems,
@@ -117,53 +99,105 @@ router.post("/create-checkout-session", async (req, res) => {
       success_url: `${process.env.CLIENT_URL}/order-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${process.env.CLIENT_URL}/cart`,
       metadata: {
-        userId: req.user?.id || "guest",
+        userId,
+        shippingAddress: JSON.stringify(shippingAddress),
       },
     });
 
-    console.log("║ ✅ Stripe session created:", session.id);
+    console.log("║ ✅ Stripe session:", session.id);
     console.log("╚═══════════════════════════════════════");
 
     res.json({ url: session.url, sessionId: session.id });
   } catch (err) {
-    console.log("║ ❌❌❌ ERROR CAUGHT:");
-    console.log("║ ❌ Message:", err.message);
-    console.log("║ ❌ Type:", err.type);
-    console.log("║ ❌ Code:", err.code);
-    console.log("║ ❌ Stack:", err.stack);
+    console.error("║ ❌ create-checkout-session error:", err.message);
     console.log("╚═══════════════════════════════════════");
-
     res.status(400).json({ error: err.message || "Payment session failed" });
   }
 });
 
-/* ---------- VERIFY SESSION ----------
+/* ============================================================
+   VERIFY SESSION — Creates order + decrements stock + clears cart
    GET /api/v1/payment/verify-session/:sessionId
-   Used by the success page to confirm payment.
------------------------------------------------- */
-router.get("/verify-session/:sessionId", async (req, res) => {
+   ============================================================ */
+router.get("/verify-session/:sessionId", protect, async (req, res) => {
+  const sessionId = req.params.sessionId;
+  console.log("╔═══════════════════════════════════════");
+  console.log("║ 🔍 verify-session HIT:", sessionId);
+
   try {
-    const session = await stripe.checkout.sessions.retrieve(
-      req.params.sessionId
+    // ---- 1. Verify payment with Stripe ----
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status !== "paid") {
+      console.log("║ ⚠️ Payment not completed");
+      console.log("╚═══════════════════════════════════════");
+      return res.json({ paid: false });
+    }
+
+    // ---- 2. Idempotency: check if order already exists ----
+    const existingOrder = await Order.findOne({ stripeSessionId: sessionId });
+    if (existingOrder) {
+      console.log("║ ♻️ Order already exists:", existingOrder._id);
+      console.log("╚═══════════════════════════════════════");
+      return res.json({
+        paid: true,
+        order: existingOrder.toObject(),
+        updatedProducts: [],
+        alreadyProcessed: true,
+      });
+    }
+
+    // ---- 3. Extract + validate metadata ----
+    const userId = session.metadata?.userId;
+    const shippingAddress = JSON.parse(
+      session.metadata?.shippingAddress || "{}"
     );
 
+    console.log("║ 📦 userId from metadata:", userId);
+    console.log("║ 📦 shippingAddress:", JSON.stringify(shippingAddress));
+
+    if (!isValidObjectId(userId)) {
+      console.log("║ ❌ Invalid userId:", userId);
+      console.log("╚═══════════════════════════════════════");
+      return res.status(400).json({
+        paid: true,
+        error: `Invalid userId in session metadata: ${userId}`,
+      });
+    }
+
+    // ---- 4. 🔑 CREATE THE ORDER ----
+    console.log("║ 🔑 Creating order...");
+    const result = await createOrder(userId, { shippingAddress });
+    const { order, updatedProducts } = result;
+
+    // ---- 5. Attach Stripe session ID ----
+    await Order.findByIdAndUpdate(order._id, {
+      stripeSessionId: sessionId,
+      paymentStatus: "paid",
+    });
+
+    console.log("║ ✅ Order created:", order._id);
+    console.log("║ 📦 Stock changes:", JSON.stringify(updatedProducts));
+    console.log("╚═══════════════════════════════════════");
+
     res.json({
-      paid: session.payment_status === "paid",
-      amountTotal: session.amount_total, // in cents
-      currency: session.currency,
-      customerEmail: session.customer_details?.email || null,
-      status: session.status,
+      paid: true,
+      order,
+      updatedProducts,
+      alreadyProcessed: false,
     });
   } catch (err) {
-    console.error("Stripe verify error:", err);
+    console.error("║ ❌ verify-session error:", err.message);
+    console.error("║ ❌ stack:", err.stack);
+    console.log("╚═══════════════════════════════════════");
     res.status(500).json({ error: err.message });
   }
 });
 
 /* ============================================================
-   WEBHOOK HANDLER — raw body required
+   WEBHOOK HANDLER — Backup path (fires when Stripe posts)
    ============================================================ */
-const webhookHandler = (req, res) => {
+const webhookHandler = async (req, res) => {
   const sig = req.headers["stripe-signature"];
   let event;
 
@@ -178,27 +212,41 @@ const webhookHandler = (req, res) => {
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  switch (event.type) {
-    case "checkout.session.completed": {
-      const session = event.data.object;
-      console.log("✅ Payment succeeded:", session.id);
-      break;
+  if (event.type === "checkout.session.completed") {
+    const session = event.data.object;
+    const sessionId = session.id;
+
+    try {
+      const existing = await Order.findOne({ stripeSessionId: sessionId });
+      if (existing) {
+        console.log("♻️ [Webhook] Order already exists:", existing._id);
+        return res.json({ received: true });
+      }
+
+      const userId = session.metadata?.userId;
+      const shippingAddress = JSON.parse(
+        session.metadata?.shippingAddress || "{}"
+      );
+
+      if (isValidObjectId(userId)) {
+        const { order, updatedProducts } = await createOrder(userId, {
+          shippingAddress,
+        });
+        await Order.findByIdAndUpdate(order._id, {
+          stripeSessionId: sessionId,
+          paymentStatus: "paid",
+        });
+        console.log("✅ [Webhook] Order created:", order._id);
+        console.log("📦 [Webhook] Stock changes:", updatedProducts);
+      }
+    } catch (err) {
+      console.error("❌ [Webhook] Failed:", err.message);
     }
-    case "checkout.session.expired":
-    case "payment_intent.payment_failed": {
-      const obj = event.data.object;
-      console.log("❌ Payment failed/expired:", obj.id);
-      break;
-    }
-    default:
-      console.log(`Unhandled event: ${event.type}`);
   }
 
   res.json({ received: true });
 };
 
-/* ============================================================
-   EXPORTS
-   ============================================================ */
+/* ============================================================ */
 export { router, webhookHandler };
 export default { router, webhookHandler };

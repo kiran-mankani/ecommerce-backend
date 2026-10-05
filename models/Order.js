@@ -44,13 +44,16 @@ const orderSchema = new mongoose.Schema(
     subtotal: { type: Number, required: true, min: 0 },
     discount: { type: Number, required: true, min: 0, default: 0 },
     total: { type: Number, required: true, min: 0 },
+
+    // 🔧 RELAXED: only `address` required — others optional
     shippingAddress: {
-      name: { type: String, required: true, trim: true },
-      phone: { type: String, required: true, trim: true },
+      name: { type: String, trim: true, default: "" },
+      phone: { type: String, trim: true, default: "" },
       address: { type: String, required: true, trim: true },
-      city: { type: String, required: true, trim: true },
-      country: { type: String, required: true, trim: true },
+      city: { type: String, trim: true, default: "" },
+      country: { type: String, trim: true, default: "" },
     },
+
     orderStatus: {
       type: String,
       enum: [
@@ -63,6 +66,18 @@ const orderSchema = new mongoose.Schema(
       ],
       default: "pending",
       index: true,
+    },
+
+    // 🔑 NEW: Stripe integration fields
+    stripeSessionId: {
+      type: String,
+      index: true,
+      sparse: true, // allows documents without this field
+    },
+    paymentStatus: {
+      type: String,
+      enum: ["pending", "paid", "failed", "refunded"],
+      default: "pending",
     },
   },
   { timestamps: true }

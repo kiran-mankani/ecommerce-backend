@@ -35,7 +35,11 @@ const cartSchema = new mongoose.Schema(
       default: [],
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    versionKey: false,   // 🔑 KEY FIX — removes __v, prevents silent $push rejections
+    minimize: false,     // 🔑 keeps empty arrays in DB
+  }
 );
 
 const Cart = mongoose.model("Cart", cartSchema);
